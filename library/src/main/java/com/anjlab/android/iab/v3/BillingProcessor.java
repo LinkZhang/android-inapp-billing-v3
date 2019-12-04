@@ -37,9 +37,8 @@ import com.android.billingclient.api.SkuDetailsParams;
 import com.android.billingclient.api.SkuDetailsResponseListener;
 
 import java.util.ArrayList;
-import java.util.HashMap;
+import java.util.Collections;
 import java.util.List;
-import java.util.Map;
 import java.util.UUID;
 
 public class BillingProcessor extends BillingBase implements PurchasesUpdatedListener {
@@ -69,11 +68,13 @@ public class BillingProcessor extends BillingBase implements PurchasesUpdatedLis
     private static final String MANAGED_PRODUCTS_CACHE_KEY = ".products.cache" + SETTINGS_VERSION;
     private static final String SUBSCRIPTIONS_CACHE_KEY = ".subscriptions.cache" + SETTINGS_VERSION;
     private static final String PURCHASE_PAYLOAD_CACHE_KEY = ".purchase.last" + SETTINGS_VERSION;
+    private static final String SKUDETAIL_PAYLOAD_CACHE_KEY = ".skudetails.last" + SETTINGS_VERSION;
     private BillingClient mBillingClient;
     private String signatureBase64;
-    private BillingCache cachedProducts;
-    private BillingCache cachedSubscriptions;
-    private Map<String, SkuDetails> mSkuDetailsCache;
+    private PurchaseCache cachedProducts;
+    private PurchaseCache cachedSubscriptions;
+    private SkuDetailCache cacheSkuDetails;
+
     private IBillingHandler mEventHandler;
     private boolean isOneTimePurchasesSupported;
     private boolean isSubsUpdateSupported;
@@ -99,9 +100,10 @@ public class BillingProcessor extends BillingBase implements PurchasesUpdatedLis
         super(context.getApplicationContext());
         signatureBase64 = licenseKey;
         mEventHandler = handler;
-        cachedProducts = new BillingCache(getContext(), MANAGED_PRODUCTS_CACHE_KEY);
-        cachedSubscriptions = new BillingCache(getContext(), SUBSCRIPTIONS_CACHE_KEY);
-        mSkuDetailsCache = new HashMap<>();
+        cachedProducts = new PurchaseCache(getContext(), MANAGED_PRODUCTS_CACHE_KEY);
+        cachedSubscriptions = new PurchaseCache(getContext(), SUBSCRIPTIONS_CACHE_KEY);
+        cacheSkuDetails = new SkuDetailCache(getContext(),SKUDETAIL_PAYLOAD_CACHE_KEY);
+
         mBillingClient = BillingClient.newBuilder(context.getApplicationContext())
                 .setListener(this)
                 .enablePendingPurchases()
@@ -120,7 +122,7 @@ public class BillingProcessor extends BillingBase implements PurchasesUpdatedLis
             for (Purchase purchase : purchases) {
                 if (verifyPurchaseSignature(purchase.getSku(), purchase.getOriginalJson(),
                         purchase.getSignature())) {
-                    BillingCache cache;
+                    PurchaseCache cache;
                     if (TextUtils.equals(detectPurchaseTypeFromPurchaseResponseData(), BillingClient.SkuType.INAPP)) {
                         cache = cachedProducts;
                     } else {
@@ -236,7 +238,7 @@ public class BillingProcessor extends BillingBase implements PurchasesUpdatedLis
         return cachedSubscriptions.getContents();
     }
 
-    private boolean loadPurchasesByType(String type, BillingCache cacheStorage) {
+    private boolean loadPurchasesByType(String type, PurchaseCache cacheStorage) {
         if (!isInitialized()) {
             return false;
         }
@@ -493,7 +495,7 @@ public class BillingProcessor extends BillingBase implements PurchasesUpdatedLis
 
 
     @Nullable
-    private Purchase getPurchaseTransactionDetails(String productId, BillingCache cache) {
+    private Purchase getPurchaseTransactionDetails(String productId, PurchaseCache cache) {
         Purchase details = cache.getDetails(productId);
         if (details != null && !TextUtils.isEmpty(details.getOriginalJson())) {
             return details;
@@ -536,21 +538,27 @@ public class BillingProcessor extends BillingBase implements PurchasesUpdatedLis
         }
     }
 
-    private SkuDetails getSkuDetails(String productId) {
-        if (mSkuDetailsCache != null && mSkuDetailsCache.containsKey(productId)) {
-            return mSkuDetailsCache.get(productId);
+    public SkuDetails getSkuDetails(String productId) {
+        if (cacheSkuDetails != null && cacheSkuDetails.includesProduct(productId)) {
+            return cacheSkuDetails.getDetails(productId);
+        }else {
+            getSkuDetailsAsync(Collections.singletonList(productId),BillingClient.SkuType.INAPP);
         }
         return null;
     }
 
-    private List<SkuDetails> getSkuDetails(List<String> productId) {
+    public List<SkuDetails> getSkuDetails(List<String> productId) {
         List<SkuDetails> details = new ArrayList<>();
-        if (mSkuDetailsCache != null) {
+        if (cacheSkuDetails != null && !cacheSkuDetails.isEmpty()) {
             for (String s : productId) {
-                if (mSkuDetailsCache.containsKey(s)) {
-                    details.add(mSkuDetailsCache.get(s));
+                if (cacheSkuDetails.includesProduct(s)) {
+                    details.add(cacheSkuDetails.getDetails(s));
+                }else {
+                    getSkuDetailsAsync(Collections.singletonList(s),BillingClient.SkuType.INAPP);
                 }
             }
+        }else{
+            getSkuDetailsAsync(productId,BillingClient.SkuType.INAPP);
         }
         return details;
     }
@@ -567,7 +575,7 @@ public class BillingProcessor extends BillingBase implements PurchasesUpdatedLis
                     if (billingResult.getResponseCode() == BillingClient.BillingResponseCode.OK) {
                         if (mEventHandler != null) {
                             for (SkuDetails details : skuDetails) {
-                                mSkuDetailsCache.put(details.getSku(), details);
+                                cacheSkuDetails.put(details.getSku(), details);
                             }
                             mEventHandler.onQuerySkuDetails(skuDetails);
                         }
