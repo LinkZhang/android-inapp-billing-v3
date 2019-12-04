@@ -28,7 +28,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.regex.Pattern;
 
-class BillingCache extends BillingBase {
+class PurchaseCache extends BillingBase {
     private static final String ENTRY_DELIMITER = "#####";
     private static final String LINE_DELIMITER = ">>>>>";
     private static final String VERSION_KEY = ".version";
@@ -37,7 +37,7 @@ class BillingCache extends BillingBase {
     private String cacheKey;
     private String version;
 
-    BillingCache(Context context, String key) {
+    PurchaseCache(Context context, String key) {
         super(context);
         data = new HashMap<>();
         cacheKey = key;
