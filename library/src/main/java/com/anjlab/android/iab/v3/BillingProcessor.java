@@ -503,6 +503,19 @@ public class BillingProcessor extends BillingBase implements PurchasesUpdatedLis
         return null;
     }
 
+    public void consumePurchase(String developerPayload,String token,
+                                ConsumeResponseListener listener){
+        if (!isInitialized() || TextUtils.isEmpty(developerPayload) || TextUtils.isEmpty(token)) {
+            return;
+        }
+
+        ConsumeParams params = ConsumeParams.newBuilder()
+                .setDeveloperPayload(developerPayload)
+                .setPurchaseToken(token)
+                .build();
+        mBillingClient.consumeAsync(params, listener);
+    }
+
     public void consumePurchase(final String productId) {
         if (!isInitialized()) {
             return;
